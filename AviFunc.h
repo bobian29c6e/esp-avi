@@ -1,6 +1,5 @@
 #define AVI_SUPPORT_CINEPAK
 #define AVI_SUPPORT_MJPEG
-#define AVI_SUPPORT_AUDIO
 
 extern "C"
 {
@@ -9,11 +8,8 @@ extern "C"
 
 #define SKIP_FRAME_TOLERANT_MS 100
 
-#define MAX_AUDIO_FRAME_SIZE 1024 * 3
 
 #define UNKNOWN_CODEC_CODE -1
-#define PCM_CODEC_CODE 1
-#define MP3_CODEC_CODE 85
 #define CINEPAK_CODEC_CODE 1001
 #define MJPEG_CODEC_CODE 1002
 
@@ -50,14 +46,6 @@ unsigned long avi_total_read_video_ms;
 unsigned long avi_total_decode_video_ms;
 unsigned long avi_total_show_video_ms;
 
-#ifdef AVI_SUPPORT_AUDIO
-char *audbuf;
-size_t audbuf_read;
-size_t audbuf_remain;
-unsigned long avi_total_read_audio_ms;
-unsigned long total_decode_audio_ms;
-unsigned long total_play_audio_ms;
-#endif // AVI_SUPPORT_AUDIO
 
 bool avi_init()
 {
@@ -69,14 +57,6 @@ bool avi_init()
     return false;
   }
 
-#ifdef AVI_SUPPORT_AUDIO
-  audbuf = (char *)heap_caps_malloc(MAX_AUDIO_FRAME_SIZE, MALLOC_CAP_8BIT);
-  if (!audbuf)
-  {
-    Serial.println("audbuf heap_caps_malloc failed!");
-    return false;
-  }
-#endif // AVI_SUPPORT_AUDIO
 
 #ifdef AVI_SUPPORT_MJPEG
   // Generate default configuration
@@ -154,28 +134,10 @@ bool avi_open(char *avi_filename)
   avi_total_decode_video_ms = 0;
   avi_total_show_video_ms = 0;
 
-#ifdef AVI_SUPPORT_AUDIO
-  audbuf_remain = 0;
-  avi_total_read_audio_ms = 0;
-  total_decode_audio_ms = 0;
-  total_play_audio_ms = 0;
-#endif // AVI_SUPPORT_AUDIO
 
   return true;
 }
 
-#ifdef AVI_SUPPORT_AUDIO
-void avi_feed_audio()
-{
-  if (audbuf_remain == 0)
-  {
-    unsigned long curr_ms = millis();
-    audbuf_read = AVI_read_audio(avi, audbuf, MAX_AUDIO_FRAME_SIZE);
-    audbuf_remain = audbuf_read;
-    avi_total_read_audio_ms += millis() - curr_ms;
-  }
-}
-#endif // AVI_SUPPORT_AUDIO
 
 bool avi_decode()
 {
@@ -210,11 +172,7 @@ bool avi_decode()
       unsigned long curr_ms = millis();
       actual_video_size = AVI_read_frame(avi, vidbuf, &avi_curr_is_key_frame);
       avi_total_read_video_ms += millis() - curr_ms;
-#ifdef AVI_SUPPORT_AUDIO
-      // Serial.printf("frame: %ld, avi_curr_is_key_frame: %ld, video_bytes: %ld, actual_video_size: %ld, audio_bytes: %ld, ESP.getFreeHeap(): %ld\n", avi_curr_frame, avi_curr_is_key_frame, video_bytes, actual_video_size, audio_bytes, (long)ESP.getFreeHeap());
-#else
       // Serial.printf("frame: %ld, avi_curr_is_key_frame: %ld, video_bytes: %ld, actual_video_size: %ld, ESP.getFreeHeap(): %ld\n", avi_curr_frame, avi_curr_is_key_frame, video_bytes, actual_video_size, (long)ESP.getFreeHeap());
-#endif
 
       curr_ms = millis();
       if (avi_vcodec == UNKNOWN_CODEC_CODE)
@@ -275,9 +233,6 @@ void avi_draw(int x, int y)
 void avi_close()
 {
   AVI_close(avi);
-#ifdef AVI_SUPPORT_AUDIO
-  audbuf_read = 0;
-#endif // AVI_SUPPORT_AUDIO
 }
 
 void avi_show_stat()
@@ -294,9 +249,4 @@ void avi_show_stat()
   Serial.printf("Read video: %lu ms (%0.1f %%)\n", avi_total_read_video_ms, 100.0 * avi_total_read_video_ms / time_used);
   Serial.printf("Decode video: %lu ms (%0.1f %%)\n", avi_total_decode_video_ms, 100.0 * avi_total_decode_video_ms / time_used);
   Serial.printf("Show video: %lu ms (%0.1f %%)\n", avi_total_show_video_ms, 100.0 * avi_total_show_video_ms / time_used);
-#ifdef AVI_SUPPORT_AUDIO
-  Serial.printf("Read audio: %lu ms (%0.1f %%)\n", avi_total_read_audio_ms, 100.0 * avi_total_read_audio_ms / time_used);
-  Serial.printf("Decode audio: %lu ms (%0.1f %%)\n", total_decode_audio_ms, 100.0 * total_decode_audio_ms / time_used);
-  Serial.printf("Play audio: %lu ms (%0.1f %%)\n", total_play_audio_ms, 100.0 * total_play_audio_ms / time_used);
-#endif // AVI_SUPPORT_AUDIO
 }
