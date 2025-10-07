@@ -20,6 +20,8 @@ int selectedIndex = 0;
 
 // Global switch: set to false to disable audio playback (video-only for smoother FPS)
 const bool ENABLE_AUDIO = false;
+// Seamless loop mode: loop a single AVI without closing/reopening to avoid black flash
+const bool SEAMLESS_LOOP = true;
 
 #include <PINS_JC4827W543.h>    // Install "GFX Library for Arduino" with the Library Manager (last tested on v1.5.6)
                                 // Install "Dev Device Pins" with the Library Manager (last tested on v0.0.2)
@@ -99,17 +101,28 @@ void setup()
       return;
     }
 
-    // Auto-play loop: iterate all files and repeat forever
-    while (true)
+    // Auto-play loop
+    if (SEAMLESS_LOOP)
     {
-      for (int i = 0; i < fileCount; ++i)
+      // Play the first AVI continuously without black flash between loops
+      String fullPath = String(sdMountPoint) + String(AVI_FOLDER) + "/" + aviFileList[0];
+      char aviFilename[128];
+      fullPath.toCharArray(aviFilename, sizeof(aviFilename));
+      playAviFile(aviFilename); // This call will not return in seamless mode
+    }
+    else
+    {
+      while (true)
       {
-        String fullPath = String(sdMountPoint) + String(AVI_FOLDER) + "/" + aviFileList[i];
-        char aviFilename[128];
-        fullPath.toCharArray(aviFilename, sizeof(aviFilename));
-        playAviFile(aviFilename);
-        // small gap between files
-        delay(200);
+        for (int i = 0; i < fileCount; ++i)
+        {
+          String fullPath = String(sdMountPoint) + String(AVI_FOLDER) + "/" + aviFileList[i];
+          char aviFilename[128];
+          fullPath.toCharArray(aviFilename, sizeof(aviFilename));
+          playAviFile(aviFilename);
+          // small gap between files
+          delay(200);
+        }
       }
     }
   }
@@ -224,7 +237,11 @@ void playAviFile(char *avifile)
   if (avi_open(avifile))
   {
     Serial.printf("AVI start %s\n", avifile);
-    gfx->fillScreen(BLACK);
+    // For seamless loop we avoid clearing the screen to prevent a black flash
+    if (!SEAMLESS_LOOP)
+    {
+      gfx->fillScreen(BLACK);
+    }
     // Sanity checks to avoid bogus files (e.g. macOS resource forks ._*)
     if (avi_total_frames <= 0 || avi_w <= 0 || avi_h <= 0 || avi_fr <= 0)
     {
@@ -300,22 +317,46 @@ void playAviFile(char *avifile)
     avi_start_ms = millis();
 
     Serial.println("Start play loop");
-    while (avi_curr_frame < avi_total_frames)
+    bool first_loop = true;
+    while (true)
     {
-      if (ENABLE_AUDIO)
+      while (avi_curr_frame < avi_total_frames)
       {
-        avi_feed_audio();
+        if (ENABLE_AUDIO)
+        {
+          avi_feed_audio();
+        }
+        if (avi_decode())
+        {
+          avi_draw(0, 0);
+        }
       }
-      if (avi_decode())
+
+      if (SEAMLESS_LOOP)
       {
-        avi_draw(0, 0);
+        // Reset timing and frame index for seamless looping without clearing screen
+        avi_curr_frame = 0;
+        avi_skipped_frames = 0;
+        avi_total_read_video_ms = 0;
+        avi_total_decode_video_ms = 0;
+        avi_total_show_video_ms = 0;
+        avi_start_ms = millis();
+        first_loop = false;
+        continue; // decode the same file again without closing
+      }
+      else
+      {
+        break; // exit when not in seamless mode
       }
     }
 
-    avi_close();
-    Serial.println("AVI end");
-
-    avi_show_stat();
+    // Normal (non-seamless) close and stats
+    if (!SEAMLESS_LOOP)
+    {
+      avi_close();
+      Serial.println("AVI end");
+      avi_show_stat();
+    }
   }
   else
   {
